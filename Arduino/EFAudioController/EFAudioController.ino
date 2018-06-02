@@ -19,8 +19,6 @@
 #include <SdFat.h>
 #include <Bounce.h>
 #include <Audio.h>
-///#include <Wire.h>
-///#include <SPI.h>
 
 
 /*****************
@@ -48,7 +46,7 @@ static constexpr float headphoneVolume = 0.5;         // 0 to 1.0; 0.5 is comfor
 
 static constexpr unsigned int numAudioBufferBlocks = 60;
 
-static constexpr char recordingBufferFileName[] = "recbuf.u16";  //"RECBUF.RAW";
+static constexpr char recordingBufferFileName[] = "recbuf.u16";
 
 
 /*************
@@ -104,22 +102,10 @@ static File recordingBufferFile;
 
 bool openRecordingBufferFile()
 {
-  // Delete an existing recording buffer file because SD
-  // will append to (not overwrite) an existing file.
-  if (sd.exists(recordingBufferFileName)) {
-    sd.remove(recordingBufferFileName);
-  }
-
-//  recordingBufferFile = sd.open(recordingBufferFileName, FILE_WRITE);
-////  recordingBufferFile = sd.open(recordingBufferFileName, O_CREAT | O_TRUNC);
-
   if (recordingBufferFile.isOpen()) {
     recordingBufferFile.close();
   }
-//  recordingBufferFile.open(dynamic_cast<FatFileSystem>(&sd), recordingBufferFileName,  O_CREAT | O_TRUNC);
-//  recordingBufferFile.open(&sd, recordingBufferFileName,  O_CREAT | O_TRUNC);
   recordingBufferFile.open(&sd, recordingBufferFileName,  O_CREAT | O_WRITE | O_TRUNC);
-
   return recordingBufferFile.isOpen();
 }
 
@@ -138,8 +124,9 @@ void startAudioRecordQueue()
 
 void writeAudioRecordQueueToFile()
 {
-  // The Arduino SD library is most efficient when
-  // full 512 byte sector size writes are used.
+  // The Arduino SD library is most efficient when full 512 byte
+  // sector size writes are used.  Not sure if that is true with
+  // SdFat, but we'll leave things this way for now.
   while (queue1.available() >= 2) {
     byte buffer[512];
     memcpy(buffer, queue1.readBuffer(), 256);
@@ -190,10 +177,6 @@ void setup()
   sgtl5000_1.volume(headphoneVolume);
   sgtl5000_1.lineOutLevel(lineOutputLevel);
   mixer1.gain(0, lineOutputGain);
-
-//  SPI.setMISO(SDCARD_MISO_PIN);
-//  SPI.setMOSI(SDCARD_MOSI_PIN);
-//  SPI.setSCK(SDCARD_SCK_PIN);
 
   opState = OperatingState::INIT;
 }
