@@ -16,11 +16,11 @@
  *                                                                    *
  **********************************************************************/
 
+#include <SdFat.h>
 #include <Bounce.h>
 #include <Audio.h>
-#include <Wire.h>
-#include <SPI.h>
-#include <SD.h>
+///#include <Wire.h>
+///#include <SPI.h>
 
 
 /*****************
@@ -28,6 +28,7 @@
  *****************/
 
 #define SDCARD_CS_PIN    10
+#define SDCARD_MISO_PIN  12
 #define SDCARD_MOSI_PIN  7
 #define SDCARD_SCK_PIN   14
 #define RECORD_BUTTON_PIN 2
@@ -37,6 +38,8 @@
 #define RECORD_LED_PIN 5
 #define ERROR_LED_PIN 16
 
+#define SPI_SPEED SD_SCK_MHZ(50)
+
 static constexpr int inputSource = AUDIO_INPUT_MIC;   // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
 static constexpr unsigned int micInputGain = 55;      // 0 to 63 dB; anything much over 55 seems distorted
 static constexpr float lineOutputGain = 0.1;          // 0 to 1.0
@@ -45,7 +48,7 @@ static constexpr float headphoneVolume = 0.5;         // 0 to 1.0; 0.5 is comfor
 
 static constexpr unsigned int numAudioBufferBlocks = 60;
 
-static constexpr char recordingBufferFileName[] = "recbuf.raw";   // SD requires 8.3-style file names.
+static constexpr char recordingBufferFileName[] = "recbuf.u16";  //"RECBUF.RAW";
 
 
 /*************
@@ -85,6 +88,8 @@ static AudioConnection          patchCord5(mixer1, 0, i2s1, 1);
 static AudioControlSGTL5000     sgtl5000_1;     //xy=381,303
 // GUItool: end automatically generated code
 
+SdFatSoftSpi<SDCARD_MISO_PIN, SDCARD_MOSI_PIN, SDCARD_SCK_PIN> sd;
+
 static Bounce buttonRecord = Bounce(RECORD_BUTTON_PIN, 8);
 static Bounce buttonPlay =   Bounce(PLAY_BUTTON_PIN, 8);
 
@@ -101,13 +106,21 @@ bool openRecordingBufferFile()
 {
   // Delete an existing recording buffer file because SD
   // will append to (not overwrite) an existing file.
-  if (SD.exists(recordingBufferFileName)) {
-    SD.remove(recordingBufferFileName);
+  if (sd.exists(recordingBufferFileName)) {
+    sd.remove(recordingBufferFileName);
   }
-      
-  recordingBufferFile = SD.open(recordingBufferFileName, FILE_WRITE);
 
-  return recordingBufferFile != 0 ? true : false;
+//  recordingBufferFile = sd.open(recordingBufferFileName, FILE_WRITE);
+////  recordingBufferFile = sd.open(recordingBufferFileName, O_CREAT | O_TRUNC);
+
+  if (recordingBufferFile.isOpen()) {
+    recordingBufferFile.close();
+  }
+//  recordingBufferFile.open(dynamic_cast<FatFileSystem>(&sd), recordingBufferFileName,  O_CREAT | O_TRUNC);
+//  recordingBufferFile.open(&sd, recordingBufferFileName,  O_CREAT | O_TRUNC);
+  recordingBufferFile.open(&sd, recordingBufferFileName,  O_CREAT | O_WRITE | O_TRUNC);
+
+  return recordingBufferFile.isOpen();
 }
 
 
@@ -178,8 +191,9 @@ void setup()
   sgtl5000_1.lineOutLevel(lineOutputLevel);
   mixer1.gain(0, lineOutputGain);
 
-  SPI.setMOSI(SDCARD_MOSI_PIN);
-  SPI.setSCK(SDCARD_SCK_PIN);
+//  SPI.setMISO(SDCARD_MISO_PIN);
+//  SPI.setMOSI(SDCARD_MOSI_PIN);
+//  SPI.setSCK(SDCARD_SCK_PIN);
 
   opState = OperatingState::INIT;
 }
@@ -201,7 +215,7 @@ void loop()
   switch(opState) {
 
     case OperatingState::INIT:
-      if (!(SD.begin(SDCARD_CS_PIN))) {
+      if (!sd.begin(SDCARD_CS_PIN, SPI_SPEED)) {
         digitalWrite(ERROR_LED_PIN, HIGH);
         opState = OperatingState::ERROR_HALT;
       }
@@ -218,10 +232,12 @@ void loop()
     case OperatingState::IDLE:
       if (buttonRecord.fallingEdge()) {
         digitalWrite(IDLE_LED_PIN, LOW);
+        digitalWrite(ERROR_LED_PIN, LOW);
         opState = OperatingState::RECORDING_START;
       }
       else if (buttonPlay.fallingEdge()) {
         digitalWrite(IDLE_LED_PIN, LOW);
+        digitalWrite(ERROR_LED_PIN, LOW);
         opState = OperatingState::PLAYING_START;
       }
       break;
@@ -230,7 +246,6 @@ void loop()
       if (openRecordingBufferFile()) {
         startAudioRecordQueue();
         digitalWrite(RECORD_LED_PIN, HIGH);
-        digitalWrite(ERROR_LED_PIN, LOW);
         opState = OperatingState::RECORDING;
       }
       else {
@@ -255,9 +270,16 @@ void loop()
       break;
 
     case OperatingState::PLAYING_START:
-      digitalWrite(PLAY_LED_PIN, HIGH);
-      playRaw1.play(recordingBufferFileName);
-      opState = OperatingState::PLAYING;
+      if (sd.exists(recordingBufferFileName)) {
+        playRaw1.play(sd, recordingBufferFileName);
+        digitalWrite(PLAY_LED_PIN, HIGH);
+        opState = OperatingState::PLAYING;
+      }
+      else {
+        // Couldn't open the recording buffer file.
+        digitalWrite(ERROR_LED_PIN, HIGH);
+        opState = OperatingState::IDLE_START;
+      }
       break;
 
     case OperatingState::PLAYING:
