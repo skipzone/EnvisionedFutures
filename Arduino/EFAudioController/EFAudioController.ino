@@ -100,25 +100,25 @@ static File recordingBufferFile;
  * Helpers *
  ***********/
 
-bool openRecordingBufferFile()
+
+bool startAudioRecordQueue()
 {
+  // Returns true if recording to the recording buffer file has started successfully.
+
+  // The file should not be open already when this function is called,
+  // but let's do some defensive driving.
   if (recordingBufferFile.isOpen()) {
+    queue1.end();
     recordingBufferFile.close();
   }
+
   recordingBufferFile.open(&sd, recordingBufferFileName,  O_CREAT | O_WRITE | O_TRUNC);
+
+  if (recordingBufferFile.isOpen()) {
+    queue1.begin();
+  }
+
   return recordingBufferFile.isOpen();
-}
-
-
-void closeRecordingBufferFile()
-{
-  recordingBufferFile.close();
-}
-
-
-void startAudioRecordQueue()
-{
-  queue1.begin();
 }
 
 
@@ -140,11 +140,13 @@ void writeAudioRecordQueueToFile()
 
 void stopAudioRecordQueue()
 {
-  queue1.end();
-
-  while (queue1.available() > 0) {
-    recordingBufferFile.write((byte*) queue1.readBuffer(), 256);
-    queue1.freeBuffer();
+  if (recordingBufferFile.isOpen()) {
+    queue1.end();
+    while (queue1.available() > 0) {
+      recordingBufferFile.write((byte*) queue1.readBuffer(), 256);
+      queue1.freeBuffer();
+    }
+    recordingBufferFile.close();
   }
 }
 
@@ -226,8 +228,7 @@ void loop()
       break;
 
     case OperatingState::RECORDING_START:
-      if (openRecordingBufferFile()) {
-        startAudioRecordQueue();
+      if (startAudioRecordQueue()) {
         digitalWrite(RECORD_LED_PIN, HIGH);
         opState = OperatingState::RECORDING;
       }
@@ -247,7 +248,6 @@ void loop()
 
     case OperatingState::RECORDING_STOP:
       stopAudioRecordQueue();
-      closeRecordingBufferFile();
       digitalWrite(RECORD_LED_PIN, LOW);
       opState = OperatingState::IDLE_START;
       break;
