@@ -17,3 +17,4 @@ Envisioned Futures is an interactive art project created by the multitalented ar
 ## Principle Libraries
 * [PJRC Audio](https://github.com/PaulStoffregen/Audio)
 * [Arduino SD](http://www.arduino.cc/en/Reference/SD)
+* [SdFat](https://github.com/greiman/SdFat)
