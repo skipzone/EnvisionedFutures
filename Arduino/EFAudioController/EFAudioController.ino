@@ -19,6 +19,7 @@
 #include <SdFat.h>
 #include <Bounce.h>
 #include <Audio.h>
+#include <stdio.h>
 
 
 #define ENABLE_DEBUG_PRINT
@@ -55,6 +56,7 @@ static constexpr char recordingBufferFileName[] = "recbuf.u16";
 static constexpr char recordingArchiveDirName[] = "recordingArchive";
 static constexpr char recordingSerialNumberFileName[] = "sernum.dat";
 static constexpr char rawAudioFileNameExtension[] = "u16";
+static constexpr char genericErrorMessageFileName[] = "somethingWentWrong.u16";
 
 
 /****************
@@ -79,10 +81,17 @@ enum class OperatingState {
   RECORDING_START,
   RECORDING,
   RECORDING_STOP,
-  PLAYING_START,
+  PLAY_LAST,
+  PLAY_RANDOM,
   PLAYING,
   ERROR_HALT
 };
+
+static constexpr unsigned int maxPathNameLength = sizeof(recordingArchiveDirName)
+                                                  + 1    // path separator
+                                                  + 5    // 5-digit file name
+                                                  + 1    // a dot
+                                                  + sizeof(rawAudioFileNameExtension);
 
 
 /***********
@@ -118,11 +127,8 @@ static OperatingState opState;
 
 static File recordingBufferFile;
 
-static char lastRecordingArchiveFilePathName[sizeof(recordingArchiveDirName)
-                                             + 1    // path separator
-                                             + 5    // 5-digit file name
-                                             + 1    // a dot
-                                             + sizeof(rawAudioFileNameExtension)];
+// TODO:  need to initialize this to the last recorded message or a generic message
+static char lastRecordingArchiveFilePathName[maxPathNameLength];
 
 
 /***********
@@ -181,8 +187,12 @@ void stopAudioRecordQueue()
 
 bool createRecordingArchiveDirectory()
 {
+  // Returns true if the recording archive directory exists (was
+  // already there, or a new one was created), false otherwise.
+
   if (sd.exists(recordingArchiveDirName)) {
     debugPrint(recordingArchiveDirName << F(" exists"));
+    // We need to make sure it really is a directory.
     FatFile archiveDirFile;
     archiveDirFile.open(recordingArchiveDirName, O_READ);
     if (!archiveDirFile.isOpen()) {
@@ -211,34 +221,73 @@ bool createRecordingArchiveDirectory()
 }
 
 
-uint16_t getLastRecordingSerialNumber()
+bool generateRecordingArchiveFilePathName(char* pathName)
 {
-}
+  // Returns true if a valid path+name was placed in the buffer pointed to by pathName.
+  // There is no guarantee about preserving the existing contents of the buffer otherwise.
+  // The buffer must be at least maxPathNameLength bytes long.
 
+  SdFile serialNumberFile;
 
-///uint16_t generateRecordingSerialNumber()
-///{
-///}
+  if (!sd.exists(recordingSerialNumberFileName)) {
+    debugPrint(recordingSerialNumberFileName << F(" doesn't exist"));
+    // Create and initialize the serial number file.
+    if (!serialNumberFile.open(&sd, recordingSerialNumberFileName,  O_CREAT | O_WRITE)) {
+      debugPrint(F("can't create the serial number file"));
+      return false;
+    }
+    serialNumberFile.println(0, DEC);
+    serialNumberFile.close();
+  }
 
+  if (!serialNumberFile.open(&sd, recordingSerialNumberFileName,  O_RDWR)) {
+    debugPrint(F("can't open the serial number file"));
+    return false;
+  }
 
-bool generateRecordingArchiveFilePathName(char* pathBuf, uint8_t bufLen)
-{
+  uint16_t serialNumber;
+  char snbuf[12];
+  if (serialNumberFile.fgets(snbuf, sizeof(snbuf)) > 0) {
+    serialNumber = strtoul(snbuf, NULL, 10);
+    debugPrint(F("read serial number """) << snbuf << """ " << serialNumber);
+  }
+  else {
+    debugPrint(F("reinitializing the serial number"));
+    serialNumber = 0;
+  }
+
+  do {
+    ++serialNumber;
+    sprintf(pathName, "%s/%05u.%s", recordingArchiveDirName, serialNumber, rawAudioFileNameExtension);
+    debugPrint(F("trying pathName = ") << pathName);
+  } while (sd.exists(pathName));
+
+  // Save the serial number we're using so that the next file name
+  // generation can avoid iterating over existing file names.
+  serialNumberFile.rewind();
+  serialNumberFile.println(serialNumber);
+  serialNumberFile.close();
+
+  return true;
 }
 
 
 bool archiveCurrentRecording()
 {
   if (!sd.exists(recordingBufferFileName)) {
+    debugPrint(recordingBufferFileName << F(" doesn't exist"));
     return false;
   }
 
-  char recordingArchiveFilePathName[sizeof(lastRecordingArchiveFilePathName)];
-  if (!generateRecordingArchiveFilePathName(recordingArchiveFilePathName, sizeof(recordingArchiveFilePathName))) {
-      return false;
+  char recordingArchiveFilePathName[maxPathNameLength];
+  if (!generateRecordingArchiveFilePathName(recordingArchiveFilePathName)) {
+    debugPrint(F("couldn't generate archive path+name"));
+    return false;
   }
 
   if (!sd.rename(recordingBufferFileName, recordingArchiveFilePathName)) {
-      return false;
+    debugPrint(F("couldn't rename ") << recordingBufferFileName << F(" to ") << recordingArchiveFilePathName);
+    return false;
   }
 
   strcpy(lastRecordingArchiveFilePathName, recordingArchiveFilePathName);
@@ -291,6 +340,7 @@ void setup()
 
 void loop()
 {
+  static OperatingState returnState;
   static uint32_t recordingStartMs;
 
   uint32_t now = millis();
@@ -333,7 +383,7 @@ void loop()
       else if (buttonPlay.fallingEdge()) {
         digitalWrite(IDLE_LED_PIN, LOW);
         digitalWrite(ERROR_LED_PIN, LOW);
-        opState = OperatingState::PLAYING_START;
+        opState = OperatingState::PLAY_LAST;
       }
       break;
 
@@ -363,21 +413,24 @@ void loop()
       digitalWrite(RECORD_LED_PIN, LOW);
       if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
         if (!archiveCurrentRecording()) {
-          digitalWrite(ERROR_LED_PIN, LOW);
+          digitalWrite(ERROR_LED_PIN, HIGH);
         }
       }
       opState = OperatingState::IDLE_START;
       break;
 
-    case OperatingState::PLAYING_START:
-      if (sd.exists(recordingBufferFileName)) {
-        playRaw1.play(sd, recordingBufferFileName);
+    case OperatingState::PLAY_LAST:
+      if (!sd.exists(lastRecordingArchiveFilePathName)) {
+        strcpy(lastRecordingArchiveFilePathName, genericErrorMessageFileName);
+      }
+      if (sd.exists(lastRecordingArchiveFilePathName)) {
+        playRaw1.play(sd, lastRecordingArchiveFilePathName);
         digitalWrite(PLAY_LED_PIN, HIGH);
         opState = OperatingState::PLAYING;
       }
       else {
         // Couldn't open the recording buffer file.
-        debugPrint(recordingBufferFileName << F(" doesn't exist"));
+        debugPrint(lastRecordingArchiveFilePathName << F(" doesn't exist"));
         digitalWrite(ERROR_LED_PIN, HIGH);
         opState = OperatingState::IDLE_START;
       }
