@@ -21,6 +21,9 @@
 #include <Audio.h>
 
 
+#define ENABLE_DEBUG_PRINT
+
+
 /*****************
  * Configuration *
  *****************/
@@ -38,6 +41,8 @@
 
 #define SPI_SPEED SD_SCK_MHZ(50)
 
+static constexpr uint32_t validRecordingMinLengthMs = 1000;
+
 static constexpr int inputSource = AUDIO_INPUT_MIC;   // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
 static constexpr unsigned int micInputGain = 55;      // 0 to 63 dB; anything much over 55 seems distorted
 static constexpr float lineOutputGain = 0.1;          // 0 to 1.0
@@ -47,6 +52,20 @@ static constexpr float headphoneVolume = 0.5;         // 0 to 1.0; 0.5 is comfor
 static constexpr unsigned int numAudioBufferBlocks = 60;
 
 static constexpr char recordingBufferFileName[] = "recbuf.u16";
+static constexpr char recordingArchiveDirName[] = "recordingArchive";
+static constexpr char recordingSerialNumberFileName[] = "sernum.dat";
+static constexpr char rawAudioFileNameExtension[] = "u16";
+
+
+/****************
+ * Nasty Macros *
+ ****************/
+
+#ifdef ENABLE_DEBUG_PRINT
+  #define debugPrint(a...) cout << a << endl
+#else
+  #define debugPrint(a...)  /* don't do anything */
+#endif
 
 
 /*************
@@ -69,6 +88,10 @@ enum class OperatingState {
 /***********
  * Globals *
  ***********/
+
+#ifdef ENABLE_DEBUG_PRINT
+ArduinoOutStream cout(Serial);
+#endif
 
 // GUItool: begin automatically generated code
 // Note:  Remove static keyword before importing this code into GUI tool.
@@ -95,11 +118,16 @@ static OperatingState opState;
 
 static File recordingBufferFile;
 
+static char lastRecordingArchiveFilePathName[sizeof(recordingArchiveDirName)
+                                             + 1    // path separator
+                                             + 5    // 5-digit file name
+                                             + 1    // a dot
+                                             + sizeof(rawAudioFileNameExtension)];
+
 
 /***********
  * Helpers *
  ***********/
-
 
 bool startAudioRecordQueue()
 {
@@ -151,6 +179,74 @@ void stopAudioRecordQueue()
 }
 
 
+bool createRecordingArchiveDirectory()
+{
+  if (sd.exists(recordingArchiveDirName)) {
+    debugPrint(recordingArchiveDirName << F(" exists"));
+    FatFile archiveDirFile;
+    archiveDirFile.open(recordingArchiveDirName, O_READ);
+    if (!archiveDirFile.isOpen()) {
+      // It exists but we can't open it?!??
+      debugPrint(F("can't open archive dir"));
+      return false;
+    }
+    bool isDir = archiveDirFile.isDir();
+    archiveDirFile.close();
+    if (isDir) {
+      // Directory already exists so we'll assume we're good to go.
+      debugPrint(F("existing archive dir is a dir"));
+      return true;
+    }
+    // It isn't a directory, it's a file.  Get rid of it so we can create the directory.
+    debugPrint(F("removing existing file with same name as archive dir"));
+    if (!sd.remove(recordingArchiveDirName)) {
+        debugPrint(F("can't remove existing archive dir file"));
+        return false;
+    }
+  }
+
+  // Create the directory and any missing parent directories.
+  debugPrint(F("creating archive dir"));
+  return sd.mkdir(recordingArchiveDirName, true);
+}
+
+
+uint16_t getLastRecordingSerialNumber()
+{
+}
+
+
+///uint16_t generateRecordingSerialNumber()
+///{
+///}
+
+
+bool generateRecordingArchiveFilePathName(char* pathBuf, uint8_t bufLen)
+{
+}
+
+
+bool archiveCurrentRecording()
+{
+  if (!sd.exists(recordingBufferFileName)) {
+    return false;
+  }
+
+  char recordingArchiveFilePathName[sizeof(lastRecordingArchiveFilePathName)];
+  if (!generateRecordingArchiveFilePathName(recordingArchiveFilePathName, sizeof(recordingArchiveFilePathName))) {
+      return false;
+  }
+
+  if (!sd.rename(recordingBufferFileName, recordingArchiveFilePathName)) {
+      return false;
+  }
+
+  strcpy(lastRecordingArchiveFilePathName, recordingArchiveFilePathName);
+
+  return true;
+}
+
+
 /******************
  * Initialization *
  ******************/
@@ -168,6 +264,11 @@ void setup()
   digitalWrite(IDLE_LED_PIN, LOW);
   digitalWrite(RECORD_LED_PIN, LOW);
   digitalWrite(ERROR_LED_PIN, LOW);
+
+#ifdef ENABLE_DEBUG_PRINT
+  Serial.begin(9600);
+#endif
+  debugPrint(F("Starting..."));
 
   // Allocate buffer blocks for recorded audio.
   AudioMemory(numAudioBufferBlocks);
@@ -190,7 +291,10 @@ void setup()
 
 void loop()
 {
-///  uint32_t now = millis();
+  static uint32_t recordingStartMs;
+
+  uint32_t now = millis();
+
 ///  if ((int32_t) (now - ledNextUpdateMs) >= 0) {
 ///    ledNextUpdateMs += ledUpdateIntervalMs; 
 
@@ -201,6 +305,12 @@ void loop()
 
     case OperatingState::INIT:
       if (!sd.begin(SDCARD_CS_PIN, SPI_SPEED)) {
+        debugPrint(F("sd.begin failed"));
+        digitalWrite(ERROR_LED_PIN, HIGH);
+        opState = OperatingState::ERROR_HALT;
+      }
+      else if (!createRecordingArchiveDirectory()) {
+        debugPrint(F("createRecordingArchiveDirectory failed"));
         digitalWrite(ERROR_LED_PIN, HIGH);
         opState = OperatingState::ERROR_HALT;
       }
@@ -229,11 +339,13 @@ void loop()
 
     case OperatingState::RECORDING_START:
       if (startAudioRecordQueue()) {
+        recordingStartMs = now;
         digitalWrite(RECORD_LED_PIN, HIGH);
         opState = OperatingState::RECORDING;
       }
       else {
         // Couldn't create/open the recording buffer file.
+        debugPrint(F("startAudioRecordQueue failed"));
         digitalWrite(ERROR_LED_PIN, HIGH);
         opState = OperatingState::IDLE_START;
       }
@@ -249,6 +361,11 @@ void loop()
     case OperatingState::RECORDING_STOP:
       stopAudioRecordQueue();
       digitalWrite(RECORD_LED_PIN, LOW);
+      if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
+        if (!archiveCurrentRecording()) {
+          digitalWrite(ERROR_LED_PIN, LOW);
+        }
+      }
       opState = OperatingState::IDLE_START;
       break;
 
@@ -260,6 +377,7 @@ void loop()
       }
       else {
         // Couldn't open the recording buffer file.
+        debugPrint(recordingBufferFileName << F(" doesn't exist"));
         digitalWrite(ERROR_LED_PIN, HIGH);
         opState = OperatingState::IDLE_START;
       }
