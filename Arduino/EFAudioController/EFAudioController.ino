@@ -51,7 +51,7 @@ static constexpr float lineOutputGain = 0.1;          // 0 to 1.0
 static constexpr uint8_t lineOutputLevel = 29;        // 29 (default) = 1.29 V p-p; range is 13 (3.16 V) to 31 (1.16 V)
 static constexpr float headphoneVolume = 0.5;         // 0 to 1.0; 0.5 is comfortable, 0.8 is max. undistored
 
-static constexpr unsigned int numAudioBufferBlocks = 60;
+static constexpr unsigned int numAudioBufferBlocks = 160;
 
 static constexpr char recordingBufferFileName[] = "recbuf.u16";
 static constexpr char recordingArchiveDirName[] = "recordingArchive";
@@ -120,7 +120,7 @@ static AudioConnection          patchCord5(mixer1, 0, i2s1, 1);
 static AudioControlSGTL5000     sgtl5000_1;     //xy=381,303
 // GUItool: end automatically generated code
 
-SdFatSoftSpi<SDCARD_MISO_PIN, SDCARD_MOSI_PIN, SDCARD_SCK_PIN> sd;
+SdFatSoftSpiEX<SDCARD_MISO_PIN, SDCARD_MOSI_PIN, SDCARD_SCK_PIN> sd;
 
 static Bounce buttonRecord = Bounce(RECORD_BUTTON_PIN, 8);
 static Bounce buttonPlayLast =   Bounce(PLAY_LAST_BUTTON_PIN, 8);
@@ -161,17 +161,26 @@ bool startAudioRecordQueue()
 
 void writeAudioRecordQueueToFile()
 {
+  static byte buffer[512];
   // The Arduino SD library is most efficient when full 512 byte
   // sector size writes are used.  Not sure if that is true with
   // SdFat, but we'll leave things this way for now.
-  while (queue1.available() >= 2) {
-    byte buffer[512];
+  while (queue1.available() >= 3) {
     memcpy(buffer, queue1.readBuffer(), 256);
     queue1.freeBuffer();
     memcpy(buffer+256, queue1.readBuffer(), 256);
     queue1.freeBuffer();
+//    memcpy(buffer+512, queue1.readBuffer(), 256);
+//    queue1.freeBuffer();
+//    memcpy(buffer+768, queue1.readBuffer(), 256);
+//    queue1.freeBuffer();
     recordingBufferFile.write(buffer, 512);
   }
+//  while (queue1.available() > 2) {
+//  if (queue1.available() > 1) {
+//    recordingBufferFile.write((byte*) queue1.readBuffer(), 256);
+//    queue1.freeBuffer();
+//  }
 }
 
 
@@ -474,6 +483,8 @@ void loop()
           digitalWrite(ERROR_LED_PIN, HIGH);
         }
       }
+      debugPrint(F("AudioMemoryUsageMax:  ") << AudioMemoryUsageMax());
+      AudioMemoryUsageMaxReset();
       opState = OperatingState::IDLE_START;
       break;
 
