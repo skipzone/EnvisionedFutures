@@ -392,6 +392,30 @@ void updateOutputGain(bool forceUpdate)
 }
 
 
+void startThrobLights()
+{
+  analogWrite(PLAY_LAST_LED_PIN, 64);
+  analogWrite(PLAY_RANDOM_LED_PIN, 64);
+  analogWrite(RECORD_LED_PIN, 64);
+}
+
+
+void stopThrobLights()
+{
+  analogWrite(PLAY_LAST_LED_PIN, 16);
+  analogWrite(PLAY_RANDOM_LED_PIN, 16);
+  analogWrite(RECORD_LED_PIN, 16);
+}
+
+
+void doThrobLights()
+{
+  analogWrite(PLAY_LAST_LED_PIN, 64);
+  analogWrite(PLAY_RANDOM_LED_PIN, 64);
+  analogWrite(RECORD_LED_PIN, 64);
+}
+
+
 
 /******************
  * Initialization *
@@ -410,9 +434,9 @@ void setup()
   pinMode(STATUS_LED_PIN, OUTPUT);
   pinMode(AMP_SHDN_PIN, OUTPUT);
 
-  digitalWrite(PLAY_LAST_LED_PIN, LOW);
-  digitalWrite(PLAY_RANDOM_LED_PIN, LOW);
-  digitalWrite(RECORD_LED_PIN, LOW);
+  analogWrite(PLAY_LAST_LED_PIN, 255);
+  analogWrite(PLAY_RANDOM_LED_PIN, 255);
+  analogWrite(RECORD_LED_PIN, 255);
   digitalWrite(STATUS_LED_PIN, LOW);
   digitalWrite(AMP_SHDN_PIN, LOW);
 
@@ -476,32 +500,36 @@ void loop()
       break;
 
     case OperatingState::IDLE_START:
-      // TODO:  start LED throb
+      startThrobLights();
       opState = OperatingState::IDLE;
       break;
 
     case OperatingState::IDLE:
       if (buttonRecord.fallingEdge()) {
+        stopThrobLights();
         // TODO:  stop LED throb
         digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::RECORDING_START;
       }
       else if (buttonPlayLast.fallingEdge()) {
-        // TODO:  stop LED throb
+        stopThrobLights();
         digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::PLAY_LAST;
       }
       else if (buttonPlayRandom.fallingEdge()) {
-        // TODO:  stop LED throb
+        stopThrobLights();
         digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::PLAY_RANDOM;
+      }
+      else {
+        doThrobLights();
       }
       break;
 
     case OperatingState::RECORDING_START:
       if (startAudioRecordQueue()) {
         recordingStartMs = now;
-        digitalWrite(RECORD_LED_PIN, HIGH);
+        analogWrite(RECORD_LED_PIN, 255);
         opState = OperatingState::RECORDING;
       }
       else {
@@ -521,7 +549,7 @@ void loop()
 
     case OperatingState::RECORDING_STOP:
       stopAudioRecordQueue();
-      digitalWrite(RECORD_LED_PIN, LOW);
+      analogWrite(RECORD_LED_PIN, 0);
       if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
         if (!archiveCurrentRecording()) {
           digitalWrite(STATUS_LED_PIN, HIGH);
@@ -535,7 +563,7 @@ void loop()
     case OperatingState::PLAY_LAST:
       if (sd.exists(lastRecordingArchiveFilePath)) {
         strcpy(rawAudioFilePath, lastRecordingArchiveFilePath);
-        digitalWrite(PLAY_LAST_LED_PIN, HIGH);
+        analogWrite(PLAY_LAST_LED_PIN, 255);
       }
       else {
         strcpy(rawAudioFilePath, genericErrorMessageFileName);
@@ -545,7 +573,7 @@ void loop()
 
     case OperatingState::PLAY_RANDOM:
       if (selectRandomRecordingArchiveFile(rawAudioFilePath)) {
-        digitalWrite(PLAY_RANDOM_LED_PIN, HIGH);
+        analogWrite(PLAY_RANDOM_LED_PIN, 255);
       }
       else {
         strcpy(rawAudioFilePath, genericErrorMessageFileName);
@@ -573,8 +601,8 @@ void loop()
       else {
         playRaw1.stop();
         digitalWrite(AMP_SHDN_PIN, LOW);
-        digitalWrite(PLAY_LAST_LED_PIN, LOW);
-        digitalWrite(PLAY_RANDOM_LED_PIN, LOW);
+        analogWrite(PLAY_LAST_LED_PIN, 0);
+        analogWrite(PLAY_RANDOM_LED_PIN, 0);
         opState = OperatingState::IDLE_START;
       }
       break;
