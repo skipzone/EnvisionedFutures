@@ -20,14 +20,15 @@
 #include <Bounce.h>
 #include <Audio.h>
 #include <stdio.h>
+#include <math.h>
 
-
-#define ENABLE_DEBUG_PRINT
 
 
 /*****************
  * Configuration *
  *****************/
+
+//#define ENABLE_DEBUG_PRINT
 
 #define SDCARD_CS_PIN    10
 #define SDCARD_MISO_PIN  12
@@ -51,11 +52,11 @@
 
 static constexpr int32_t validRecordingMinLengthMs = 1000;
 
-static constexpr int inputSource = AUDIO_INPUT_MIC;   // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
-static constexpr unsigned int micInputGain = 55;      // 0 to 63 dB; anything much over 55 seems distorted
-static constexpr float lineOutputGain = 0.1;          // 0 to 1.0
-static constexpr uint8_t lineOutputLevel = 29;        // 29 (default) = 1.29 V p-p; range is 13 (3.16 V) to 31 (1.16 V)
-static constexpr float headphoneVolume = 0.5;         // 0 to 1.0; 0.5 is comfortable, 0.8 is max. undistored
+static constexpr int inputSource = AUDIO_INPUT_MIC;           // AUDIO_INPUT_LINEIN or AUDIO_INPUT_MIC
+static constexpr unsigned int micInputGain = 55;              // 0 to 63 dB; anything much over 55 seems distorted
+static constexpr uint8_t lineOutputLevel = 29;                // 29 (default) = 1.29 V p-p; range is 13 (3.16 V) to 31 (1.16 V)
+static constexpr float headphoneVolume = 0.5;                 // 0 to 1.0; 0.5 is comfortable, 0.8 is max. undistored
+static constexpr int16_t volumeChangeDetectionThreshold = 3;  // suppresses unnecessary gain updates due to analog reading noise
 
 static constexpr unsigned int numAudioBufferBlocks = 160;
 
@@ -64,6 +65,7 @@ static constexpr char recordingArchiveDirName[] = "recordingArchive";
 static constexpr char recordingSerialNumberFileName[] = "sernum.dat";
 static constexpr char rawAudioFileNameExtension[] = "u16";
 static constexpr char genericErrorMessageFileName[] = "somethingWentWrong.u16";
+
 
 
 /****************
@@ -75,6 +77,7 @@ static constexpr char genericErrorMessageFileName[] = "somethingWentWrong.u16";
 #else
   #define debugPrint(a...)  /* don't do anything */
 #endif
+
 
 
 /*************
@@ -100,6 +103,7 @@ static constexpr unsigned int maxPathLength = sizeof(recordingArchiveDirName)
                                               + 5    // 5-digit file name
                                               + 1    // a dot
                                               + sizeof(rawAudioFileNameExtension);
+
 
 
 /***********
@@ -138,6 +142,7 @@ static File recordingBufferFile;
 
 // TODO:  need to initialize this to the last recorded message or a generic message
 static char lastRecordingArchiveFilePath[maxPathLength];
+
 
 
 /***********
@@ -293,6 +298,7 @@ void buildRecordingArchiveFilePath(uint16_t serialNumber, char* path)
   sprintf(path, "%s/%05u.%s", recordingArchiveDirName, serialNumber, rawAudioFileNameExtension);
 }
 
+
 bool generateRecordingArchiveFilePath(char* path)
 {
   // Returns true if a valid path+name was placed in the buffer pointed to by path.
@@ -361,6 +367,32 @@ bool selectRandomRecordingArchiveFile(char* path)
 }
 
 
+void updateOutputGain(bool forceUpdate)
+{
+  static int16_t lastVolumeReading;
+
+  int16_t volumeReading = analogRead(VOLUME_PIN);
+
+  // Update the mixer's gain setting if explicitly requested
+  // to do so or if the volume control has been moved.
+  if (forceUpdate || abs(volumeReading - lastVolumeReading) > volumeChangeDetectionThreshold) {
+    lastVolumeReading = volumeReading;
+
+    // A setting very close to or at minimum shuts off the audio output.
+    // Also, convert a linear pot to an approximately audio-taper pot
+    // with y=a*exp(b*x), where a = 0.001 and b = 6.908.
+    // See http://www.dr-lex.be/info-stuff/volumecontrols.html
+    float outputGain = volumeReading > volumeChangeDetectionThreshold
+                     ? 0.001 * expf(6.908 * ((float) volumeReading / 1023.0))
+                     : 0.0;
+    debugPrint(F("volumeReading=") << volumeReading << F(", outputGain=") << outputGain);
+
+    mixer1.gain(0, outputGain);
+  }
+}
+
+
+
 /******************
  * Initialization *
  ******************/
@@ -382,7 +414,7 @@ void setup()
   digitalWrite(PLAY_RANDOM_LED_PIN, LOW);
   digitalWrite(RECORD_LED_PIN, LOW);
   digitalWrite(STATUS_LED_PIN, LOW);
-  digitalWrite(AMP_SHDN_PIN, HIGH);
+  digitalWrite(AMP_SHDN_PIN, LOW);
 
 #ifdef ENABLE_DEBUG_PRINT
   Serial.begin(9600);
@@ -398,10 +430,12 @@ void setup()
   sgtl5000_1.micGain(micInputGain);
   sgtl5000_1.volume(headphoneVolume);
   sgtl5000_1.lineOutLevel(lineOutputLevel);
-  mixer1.gain(0, lineOutputGain);
+
+  updateOutputGain(true);
 
   opState = OperatingState::INIT;
 }
+
 
 
 /************
@@ -521,7 +555,7 @@ void loop()
 
     case OperatingState::PLAYING_START:
       if (sd.exists(rawAudioFilePath)) {
-        digitalWrite(AMP_SHDN_PIN, LOW);
+        digitalWrite(AMP_SHDN_PIN, HIGH);
         playRaw1.play(sd, rawAudioFilePath);
         opState = OperatingState::PLAYING;
       }
@@ -533,9 +567,12 @@ void loop()
       break;
 
     case OperatingState::PLAYING:
-      if (!playRaw1.isPlaying()) {
+      if (playRaw1.isPlaying()) {
+        updateOutputGain(false);
+      }
+      else {
         playRaw1.stop();
-        digitalWrite(AMP_SHDN_PIN, HIGH);
+        digitalWrite(AMP_SHDN_PIN, LOW);
         digitalWrite(PLAY_LAST_LED_PIN, LOW);
         digitalWrite(PLAY_RANDOM_LED_PIN, LOW);
         opState = OperatingState::IDLE_START;
