@@ -33,13 +33,19 @@
 #define SDCARD_MISO_PIN  12
 #define SDCARD_MOSI_PIN  7
 #define SDCARD_SCK_PIN   14
-#define RECORD_BUTTON_PIN 2
+
 #define PLAY_LAST_BUTTON_PIN 0
 #define PLAY_RANDOM_BUTTON_PIN 1
-#define PLAY_LED_PIN 3
-#define IDLE_LED_PIN 4
+#define RECORD_BUTTON_PIN 2
+
+#define PLAY_LAST_LED_PIN 3
+#define PLAY_RANDOM_LED_PIN 4
 #define RECORD_LED_PIN 5
-#define ERROR_LED_PIN 16
+#define STATUS_LED_PIN 8
+
+#define AMP_SHDN_PIN 21
+
+#define VOLUME_PIN A1
 
 #define SPI_SPEED SD_SCK_MHZ(50)
 
@@ -361,18 +367,22 @@ bool selectRandomRecordingArchiveFile(char* path)
 
 void setup()
 {
-  pinMode(RECORD_BUTTON_PIN, INPUT_PULLUP);
   pinMode(PLAY_LAST_BUTTON_PIN, INPUT_PULLUP);
   pinMode(PLAY_RANDOM_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(PLAY_LED_PIN, OUTPUT);
-  pinMode(IDLE_LED_PIN, OUTPUT);
+  pinMode(RECORD_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(VOLUME_PIN, INPUT);
+  
+  pinMode(PLAY_LAST_LED_PIN, OUTPUT);
+  pinMode(PLAY_RANDOM_LED_PIN, OUTPUT);
   pinMode(RECORD_LED_PIN, OUTPUT);
-  pinMode(ERROR_LED_PIN, OUTPUT);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  pinMode(AMP_SHDN_PIN, OUTPUT);
 
-  digitalWrite(PLAY_LED_PIN, LOW);
-  digitalWrite(IDLE_LED_PIN, LOW);
+  digitalWrite(PLAY_LAST_LED_PIN, LOW);
+  digitalWrite(PLAY_RANDOM_LED_PIN, LOW);
   digitalWrite(RECORD_LED_PIN, LOW);
-  digitalWrite(ERROR_LED_PIN, LOW);
+  digitalWrite(STATUS_LED_PIN, LOW);
+  digitalWrite(AMP_SHDN_PIN, HIGH);
 
 #ifdef ENABLE_DEBUG_PRINT
   Serial.begin(9600);
@@ -418,12 +428,12 @@ void loop()
     case OperatingState::INIT:
       if (!sd.begin(SDCARD_CS_PIN, SPI_SPEED)) {
         debugPrint(F("sd.begin failed"));
-        digitalWrite(ERROR_LED_PIN, HIGH);
+        digitalWrite(STATUS_LED_PIN, HIGH);
         opState = OperatingState::ERROR_HALT;
       }
       else if (!createRecordingArchiveDirectory()) {
         debugPrint(F("createRecordingArchiveDirectory failed"));
-        digitalWrite(ERROR_LED_PIN, HIGH);
+        digitalWrite(STATUS_LED_PIN, HIGH);
         opState = OperatingState::ERROR_HALT;
       }
       else {
@@ -432,24 +442,24 @@ void loop()
       break;
 
     case OperatingState::IDLE_START:
-      digitalWrite(IDLE_LED_PIN, HIGH);
+      // TODO:  start LED throb
       opState = OperatingState::IDLE;
       break;
 
     case OperatingState::IDLE:
       if (buttonRecord.fallingEdge()) {
-        digitalWrite(IDLE_LED_PIN, LOW);
-        digitalWrite(ERROR_LED_PIN, LOW);
+        // TODO:  stop LED throb
+        digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::RECORDING_START;
       }
       else if (buttonPlayLast.fallingEdge()) {
-        digitalWrite(IDLE_LED_PIN, LOW);
-        digitalWrite(ERROR_LED_PIN, LOW);
+        // TODO:  stop LED throb
+        digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::PLAY_LAST;
       }
       else if (buttonPlayRandom.fallingEdge()) {
-        digitalWrite(IDLE_LED_PIN, LOW);
-        digitalWrite(ERROR_LED_PIN, LOW);
+        // TODO:  stop LED throb
+        digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::PLAY_RANDOM;
       }
       break;
@@ -463,7 +473,7 @@ void loop()
       else {
         // Couldn't create/open the recording buffer file.
         debugPrint(F("startAudioRecordQueue failed"));
-        digitalWrite(ERROR_LED_PIN, HIGH);
+        digitalWrite(STATUS_LED_PIN, HIGH);
         opState = OperatingState::IDLE_START;
       }
       break;
@@ -480,7 +490,7 @@ void loop()
       digitalWrite(RECORD_LED_PIN, LOW);
       if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
         if (!archiveCurrentRecording()) {
-          digitalWrite(ERROR_LED_PIN, HIGH);
+          digitalWrite(STATUS_LED_PIN, HIGH);
         }
       }
       debugPrint(F("AudioMemoryUsageMax:  ") << AudioMemoryUsageMax());
@@ -491,6 +501,7 @@ void loop()
     case OperatingState::PLAY_LAST:
       if (sd.exists(lastRecordingArchiveFilePath)) {
         strcpy(rawAudioFilePath, lastRecordingArchiveFilePath);
+        digitalWrite(PLAY_LAST_LED_PIN, HIGH);
       }
       else {
         strcpy(rawAudioFilePath, genericErrorMessageFileName);
@@ -499,7 +510,10 @@ void loop()
       break;
 
     case OperatingState::PLAY_RANDOM:
-      if (!selectRandomRecordingArchiveFile(rawAudioFilePath)) {
+      if (selectRandomRecordingArchiveFile(rawAudioFilePath)) {
+        digitalWrite(PLAY_RANDOM_LED_PIN, HIGH);
+      }
+      else {
         strcpy(rawAudioFilePath, genericErrorMessageFileName);
       }
       opState = OperatingState::PLAYING_START;
@@ -507,13 +521,13 @@ void loop()
 
     case OperatingState::PLAYING_START:
       if (sd.exists(rawAudioFilePath)) {
+        digitalWrite(AMP_SHDN_PIN, LOW);
         playRaw1.play(sd, rawAudioFilePath);
-        digitalWrite(PLAY_LED_PIN, HIGH);
         opState = OperatingState::PLAYING;
       }
       else {
         debugPrint(rawAudioFilePath << F(" doesn't exist"));
-        digitalWrite(ERROR_LED_PIN, HIGH);
+        digitalWrite(STATUS_LED_PIN, HIGH);
         opState = OperatingState::IDLE_START;
       }
       break;
@@ -521,7 +535,9 @@ void loop()
     case OperatingState::PLAYING:
       if (!playRaw1.isPlaying()) {
         playRaw1.stop();
-        digitalWrite(PLAY_LED_PIN, LOW);
+        digitalWrite(AMP_SHDN_PIN, HIGH);
+        digitalWrite(PLAY_LAST_LED_PIN, LOW);
+        digitalWrite(PLAY_RANDOM_LED_PIN, LOW);
         opState = OperatingState::IDLE_START;
       }
       break;
