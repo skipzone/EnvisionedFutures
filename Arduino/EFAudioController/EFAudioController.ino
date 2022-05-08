@@ -16,6 +16,7 @@
  *                                                                    *
  **********************************************************************/
 
+#include <SerialFlash.h>
 #include <SdFat.h>
 #include <Bounce.h>
 #include <Audio.h>
