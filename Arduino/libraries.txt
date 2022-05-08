@@ -1,0 +1,18 @@
+Libraries Used By the Original 2018 Version of EFAudioController      8 May 2022
+
+SerialFlash 0.5
+SPI 1.0
+SdFat 1.0.6 (Arduino library, not a Teensy-specific library)
+Bounce 1.5 (not Bounce2; the old Bounce, a.k.a. Bounce1)
+Audio 1.3
+Wire 1.0
+
+
+Output from successful build on floyd:
+
+Using library SerialFlash at version 0.5 in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/SerialFlash 
+Using library SPI at version 1.0 in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/SPI 
+Using library SdFat at version 1.0.6 in folder: /Users/ross/devl/Arduino/libraries/SdFat 
+Using library Bounce in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/Bounce (legacy)
+Using library Audio at version 1.3 in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/Audio 
+Using library Wire at version 1.0 in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/Wire 
