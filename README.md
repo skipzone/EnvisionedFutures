@@ -17,3 +17,13 @@ Envisioned Futures is an interactive art project created by the multitalented ar
 ## Principle Libraries
 * [PJRC Audio](https://github.com/PaulStoffregen/Audio)
 * [SdFat](https://github.com/greiman/SdFat)
+
+## Converting Audio Files
+EFAudioController uses a raw audio format (i.e., no file headers).  Audio data are stored as a single (mono) channel at 44.1 kpbs using little-endian, signed, 16-bit values.  Using the [SoX](https://en.wikipedia.org/wiki/SoX) sound processing program, the .raw files created by EFAudioController can be converted to WAV format with this command:
+
+    sox -r 44100 -e signed-integer -b 16 -c 1 input_file.raw output_file.wav
+
+A handy way to convert all the files in a directory:
+
+    for f in `ls -1 *.raw`; do raw2wav $f $(basename $f .raw).wav; done
+
