@@ -43,7 +43,9 @@
 #define PLAY_LAST_LED_PIN 3
 #define PLAY_RANDOM_LED_PIN 4
 #define RECORD_LED_PIN 5
-#define STATUS_LED_PIN 8
+#define LIGHT_SENSOR_PIN 6
+#define ADDRESSABLE_LEDS_PIN 8
+#define STATUS_LED_PIN 9
 
 #define AMP_SHDN_PIN 21
 
@@ -613,4 +615,3 @@ void loop()
   }
 
 }
-
