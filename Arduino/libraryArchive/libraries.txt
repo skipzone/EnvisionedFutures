@@ -1,4 +1,4 @@
-Libraries Used By the Original 2018 Version of EFAudioController      8 May 2022
+Libraries Used By the Original 2018 Version of EFAudioController     10 May 2022
 
 SerialFlash 0.5
 SPI 1.0
@@ -16,3 +16,18 @@ Using library SdFat at version 1.0.6 in folder: /Users/ross/devl/Arduino/librari
 Using library Bounce in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/Bounce (legacy)
 Using library Audio at version 1.3 in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/Audio 
 Using library Wire at version 1.0 in folder: /Applications/Arduino.app/Contents/Java/hardware/teensy/avr/libraries/Wire 
+
+
+Required Library Modifications
+------------------------------
+
+The Teensy Audio library must be modified for compatibility with the version
+of SdFat that EFAudioController uses.  The modifyTeensyLibrary.sh script in
+PJRC_Audio copies the necessary files while preserving the originals.  You
+will likely need to modify the path to the Audio library directory in the
+script.
+
+SdFat/SdFatConfig.h enables options required by EFAudioController.  Replace
+the copy that comes with SdFat version 1.0.6, or use the provided file as a
+guide (diff is your friend here) to see which options need to be enabled.
+
