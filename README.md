@@ -14,6 +14,9 @@ Envisioned Futures is an interactive art project created by the multitalented ar
 * [PJRC Audio Adapter Board for Teensy](https://www.pjrc.com/store/teensy3_audio.html)
 * [Adafruit Mono 2.5W Class D Audio Amplifier - PAM8302](https://www.adafruit.com/product/2130)
 
+PJRC Audio board information can be found [here](https://www.pjrc.com/store/teensy3_audio.html).
+
+
 ## Principle Libraries
 * [PJRC Audio](https://github.com/PaulStoffregen/Audio)
 * [SdFat](https://github.com/greiman/SdFat)

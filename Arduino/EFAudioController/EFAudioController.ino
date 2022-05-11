@@ -43,9 +43,10 @@
 #define PLAY_LAST_LED_PIN 3
 #define PLAY_RANDOM_LED_PIN 4
 #define RECORD_LED_PIN 5
-#define LIGHT_SENSOR_PIN 6
-#define ADDRESSABLE_LEDS_PIN 8
-#define STATUS_LED_PIN 9
+//#define LIGHT_SENSOR_PIN 6  // TODO:  nope!  this is MEMCS on the audio board.  move to pin 17.
+//#define ADDRESSABLE_LEDS_PIN 8
+//#define STATUS_LED_PIN 9  // TODO:  nope!  this is BCLK on the audio board.  move to pin 20.
+#define STATUS_LED_PIN 8  // TODO:  move to pin 20.
 
 #define AMP_SHDN_PIN 21
 
