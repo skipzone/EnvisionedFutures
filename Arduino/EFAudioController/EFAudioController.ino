@@ -22,6 +22,7 @@
 #include <Audio.h>
 #include <stdio.h>
 #include <math.h>
+#include "FastLED.h"
 
 
 
@@ -44,15 +45,17 @@
 #define PLAY_RANDOM_LED_PIN 4
 #define RECORD_LED_PIN 5
 //#define LIGHT_SENSOR_PIN 6  // TODO:  nope!  this is MEMCS on the audio board.  move to pin 17.
-//#define ADDRESSABLE_LEDS_PIN 8
+#define ADDRESSABLE_LEDS_DATA_PIN 8
 //#define STATUS_LED_PIN 9  // TODO:  nope!  this is BCLK on the audio board.  move to pin 20.
-#define STATUS_LED_PIN 8  // TODO:  move to pin 20.
+#define STATUS_LED_PIN 20
 
 #define AMP_SHDN_PIN 21
 
 #define VOLUME_PIN A1
 
 #define SPI_SPEED SD_SCK_MHZ(50)
+
+#define NUM_LEDS 60
 
 static constexpr int32_t validRecordingMinLengthMs = 1000;
 
@@ -146,6 +149,8 @@ static File recordingBufferFile;
 
 // TODO:  need to initialize this to the last recorded message or a generic message
 static char lastRecordingArchiveFilePath[maxPathLength];
+
+CRGB leds[NUM_LEDS];
 
 
 
@@ -401,6 +406,9 @@ void startThrobLights()
   analogWrite(PLAY_LAST_LED_PIN, 64);
   analogWrite(PLAY_RANDOM_LED_PIN, 64);
   analogWrite(RECORD_LED_PIN, 64);
+  // FastLED test
+  leds[0] = CRGB::Cyan;
+  FastLED.show();
 }
 
 
@@ -409,6 +417,9 @@ void stopThrobLights()
   analogWrite(PLAY_LAST_LED_PIN, 16);
   analogWrite(PLAY_RANDOM_LED_PIN, 16);
   analogWrite(RECORD_LED_PIN, 16);
+  // FastLED test
+  leds[0] = CRGB::Green;
+  FastLED.show();
 }
 
 
@@ -417,6 +428,9 @@ void doThrobLights()
   analogWrite(PLAY_LAST_LED_PIN, 64);
   analogWrite(PLAY_RANDOM_LED_PIN, 64);
   analogWrite(RECORD_LED_PIN, 64);
+  // FastLED test
+  leds[0] = CRGB::Yellow;
+  ///FastLED.show();
 }
 
 
@@ -449,6 +463,8 @@ void setup()
 #endif
   debugPrint(F("Starting..."));
 
+  FastLED.addLeds<WS2811, ADDRESSABLE_LEDS_DATA_PIN, RGB>(leds, NUM_LEDS);
+      
   // Allocate buffer blocks for recorded audio.
   AudioMemory(numAudioBufferBlocks);
 
@@ -460,6 +476,9 @@ void setup()
   sgtl5000_1.lineOutLevel(lineOutputLevel);
 
   updateOutputGain(true);
+
+  leds[0] = CRGB::Black;
+  FastLED.show();
 
   opState = OperatingState::INIT;
 }
@@ -535,6 +554,9 @@ void loop()
         recordingStartMs = now;
         analogWrite(RECORD_LED_PIN, 255);
         opState = OperatingState::RECORDING;
+        // FastLED test
+        leds[0] = CRGB::Red;
+        FastLED.show();
       }
       else {
         // Couldn't create/open the recording buffer file.
@@ -554,6 +576,9 @@ void loop()
     case OperatingState::RECORDING_STOP:
       stopAudioRecordQueue();
       analogWrite(RECORD_LED_PIN, 0);
+      // FastLED test
+      leds[0] = CRGB::Black;
+      FastLED.show();
       if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
         if (!archiveCurrentRecording()) {
           digitalWrite(STATUS_LED_PIN, HIGH);
@@ -568,6 +593,9 @@ void loop()
       if (sd.exists(lastRecordingArchiveFilePath)) {
         strcpy(rawAudioFilePath, lastRecordingArchiveFilePath);
         analogWrite(PLAY_LAST_LED_PIN, 255);
+        // FastLED test
+        leds[0] = CRGB::Magenta;
+        FastLED.show();
       }
       else {
         strcpy(rawAudioFilePath, genericErrorMessageFileName);
@@ -608,6 +636,9 @@ void loop()
         analogWrite(PLAY_LAST_LED_PIN, 0);
         analogWrite(PLAY_RANDOM_LED_PIN, 0);
         opState = OperatingState::IDLE_START;
+        // FastLED test
+        leds[0] = CRGB::Black;
+        FastLED.show();
       }
       break;
 
