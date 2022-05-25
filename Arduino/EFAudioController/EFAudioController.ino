@@ -55,7 +55,7 @@
 
 #define SPI_SPEED SD_SCK_MHZ(50)
 
-#define NUM_LEDS 60
+#define NUM_LEDS 255
 
 static constexpr int32_t validRecordingMinLengthMs = 1000;
 
@@ -157,6 +157,16 @@ CRGB leds[NUM_LEDS];
 /***********
  * Helpers *
  ***********/
+
+void testAddressableLeds(CRGB rgbColor)
+{
+  for (int i = 0; i < NUM_LEDS; ++i) {
+    leds[i] = rgbColor;
+  }
+  FastLED.show(16);
+  delay(100);
+}
+
 
 bool startAudioRecordQueue()
 {
@@ -406,9 +416,6 @@ void startThrobLights()
   analogWrite(PLAY_LAST_LED_PIN, 64);
   analogWrite(PLAY_RANDOM_LED_PIN, 64);
   analogWrite(RECORD_LED_PIN, 64);
-  // FastLED test
-  leds[0] = CRGB::Cyan;
-  FastLED.show();
 }
 
 
@@ -417,9 +424,6 @@ void stopThrobLights()
   analogWrite(PLAY_LAST_LED_PIN, 16);
   analogWrite(PLAY_RANDOM_LED_PIN, 16);
   analogWrite(RECORD_LED_PIN, 16);
-  // FastLED test
-  leds[0] = CRGB::Green;
-  FastLED.show();
 }
 
 
@@ -428,9 +432,6 @@ void doThrobLights()
   analogWrite(PLAY_LAST_LED_PIN, 64);
   analogWrite(PLAY_RANDOM_LED_PIN, 64);
   analogWrite(RECORD_LED_PIN, 64);
-  // FastLED test
-  leds[0] = CRGB::Yellow;
-  ///FastLED.show();
 }
 
 
@@ -477,8 +478,7 @@ void setup()
 
   updateOutputGain(true);
 
-  leds[0] = CRGB::Black;
-  FastLED.show();
+  testAddressableLeds(CRGB::White);
 
   opState = OperatingState::INIT;
 }
@@ -523,6 +523,7 @@ void loop()
       break;
 
     case OperatingState::IDLE_START:
+      testAddressableLeds(CRGB::Green);
       startThrobLights();
       opState = OperatingState::IDLE;
       break;
@@ -550,13 +551,11 @@ void loop()
       break;
 
     case OperatingState::RECORDING_START:
+      testAddressableLeds(CRGB::Red);
       if (startAudioRecordQueue()) {
         recordingStartMs = now;
         analogWrite(RECORD_LED_PIN, 255);
         opState = OperatingState::RECORDING;
-        // FastLED test
-        leds[0] = CRGB::Red;
-        FastLED.show();
       }
       else {
         // Couldn't create/open the recording buffer file.
@@ -578,7 +577,6 @@ void loop()
       analogWrite(RECORD_LED_PIN, 0);
       // FastLED test
       leds[0] = CRGB::Black;
-      FastLED.show();
       if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
         if (!archiveCurrentRecording()) {
           digitalWrite(STATUS_LED_PIN, HIGH);
@@ -590,12 +588,10 @@ void loop()
       break;
 
     case OperatingState::PLAY_LAST:
+      testAddressableLeds(CRGB::Magenta);
       if (sd.exists(lastRecordingArchiveFilePath)) {
         strcpy(rawAudioFilePath, lastRecordingArchiveFilePath);
         analogWrite(PLAY_LAST_LED_PIN, 255);
-        // FastLED test
-        leds[0] = CRGB::Magenta;
-        FastLED.show();
       }
       else {
         strcpy(rawAudioFilePath, genericErrorMessageFileName);
@@ -604,6 +600,7 @@ void loop()
       break;
 
     case OperatingState::PLAY_RANDOM:
+      testAddressableLeds(CRGB::Blue);
       if (selectRandomRecordingArchiveFile(rawAudioFilePath)) {
         analogWrite(PLAY_RANDOM_LED_PIN, 255);
       }
@@ -636,9 +633,6 @@ void loop()
         analogWrite(PLAY_LAST_LED_PIN, 0);
         analogWrite(PLAY_RANDOM_LED_PIN, 0);
         opState = OperatingState::IDLE_START;
-        // FastLED test
-        leds[0] = CRGB::Black;
-        FastLED.show();
       }
       break;
 
