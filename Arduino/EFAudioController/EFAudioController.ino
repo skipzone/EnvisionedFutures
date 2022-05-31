@@ -22,6 +22,8 @@
 #include <Audio.h>
 #include <stdio.h>
 #include <math.h>
+#include <WS2812Serial.h>
+#define USE_WS2812SERIAL
 #include "FastLED.h"
 
 
@@ -55,7 +57,7 @@
 
 #define SPI_SPEED SD_SCK_MHZ(50)
 
-#define NUM_LEDS 255
+#define NUM_LEDS 50
 
 static constexpr int32_t validRecordingMinLengthMs = 1000;
 
@@ -72,6 +74,13 @@ static constexpr char recordingArchiveDirName[] = "recordingArchive";
 static constexpr char recordingSerialNumberFileName[] = "sernum.dat";
 static constexpr char rawAudioFileNameExtension[] = "u16";
 static constexpr char genericErrorMessageFileName[] = "somethingWentWrong.u16";
+
+static constexpr uint8_t minPanelLedThrobIntensity = 16;
+static constexpr uint8_t maxPanelLedThrobIntensity = 128;
+
+static constexpr uint32_t ledThrobStepIntervalMs = 10;
+
+static constexpr uint32_t addressableLedsUpdateIntervalMs = 100;
 
 
 
@@ -152,19 +161,33 @@ static char lastRecordingArchiveFilePath[maxPathLength];
 
 CRGB leds[NUM_LEDS];
 
+static uint8_t panelLedThrobIntensity;
+static uint32_t ledThrobNextUpdateMs;
+
+static uint32_t addressableLedsNextUpdateMs;
+
 
 
 /***********
  * Helpers *
  ***********/
 
-void testAddressableLeds(CRGB rgbColor)
+void testAddressableLeds(CRGB rgbColor, bool forceUpdate = false);
+
+void testAddressableLeds(CRGB rgbColor, bool forceUpdate)
 {
-  for (int i = 0; i < NUM_LEDS; ++i) {
-    leds[i] = rgbColor;
+  uint32_t now = millis();
+
+  if (forceUpdate) addressableLedsNextUpdateMs = now;
+
+  // TODO:  are the signed/unsigned parts right?
+  if ((int32_t) (now - addressableLedsNextUpdateMs) >= 0) {
+    addressableLedsNextUpdateMs += addressableLedsUpdateIntervalMs;
+    for (int i = 0; i < NUM_LEDS; ++i) {
+      leds[i] = rgbColor;
+    }
+    FastLED.show(16);
   }
-  FastLED.show(16);
-  delay(100);
 }
 
 
@@ -281,7 +304,7 @@ uint16_t readLastRecordingSerialNumber()
 {
   // Returns the last recording serial number as stored in the serial number file.
   // Returns 0 if the file doesn't exist or if an error occurs.
-  
+
   uint16_t serialNumber = 0;
   SdFile serialNumberFile;
 
@@ -306,7 +329,7 @@ uint16_t readLastRecordingSerialNumber()
     // Create and initialize the serial number file.
     writeLastRecordingSerialNumber(serialNumber);
   }
-  
+
   return serialNumber;
 }
 
@@ -413,25 +436,57 @@ void updateOutputGain(bool forceUpdate)
 
 void startThrobLights()
 {
-  analogWrite(PLAY_LAST_LED_PIN, 64);
-  analogWrite(PLAY_RANDOM_LED_PIN, 64);
-  analogWrite(RECORD_LED_PIN, 64);
+  ledThrobNextUpdateMs = millis();
+  panelLedThrobIntensity = minPanelLedThrobIntensity;
+  analogWrite(PLAY_LAST_LED_PIN, panelLedThrobIntensity);
+  analogWrite(PLAY_RANDOM_LED_PIN, panelLedThrobIntensity);
+  analogWrite(RECORD_LED_PIN, panelLedThrobIntensity);
 }
 
 
 void stopThrobLights()
 {
-  analogWrite(PLAY_LAST_LED_PIN, 16);
-  analogWrite(PLAY_RANDOM_LED_PIN, 16);
-  analogWrite(RECORD_LED_PIN, 16);
+  panelLedThrobIntensity = minPanelLedThrobIntensity;
+  analogWrite(PLAY_LAST_LED_PIN, panelLedThrobIntensity);
+  analogWrite(PLAY_RANDOM_LED_PIN, panelLedThrobIntensity);
+  analogWrite(RECORD_LED_PIN, panelLedThrobIntensity);
 }
 
 
 void doThrobLights()
 {
-  analogWrite(PLAY_LAST_LED_PIN, 64);
-  analogWrite(PLAY_RANDOM_LED_PIN, 64);
-  analogWrite(RECORD_LED_PIN, 64);
+  static bool steppingUp;
+  static uint8_t hue;
+
+  uint32_t now = millis();
+
+  // TODO:  are the signed/unsigned parts right?
+  if ((int32_t) (now - ledThrobNextUpdateMs) < 0) {
+    return;
+  }
+  ledThrobNextUpdateMs += ledThrobStepIntervalMs;
+
+  if (panelLedThrobIntensity >= maxPanelLedThrobIntensity) {
+    steppingUp = false;
+    panelLedThrobIntensity = maxPanelLedThrobIntensity;
+  }
+  else if (panelLedThrobIntensity <= minPanelLedThrobIntensity) {
+    steppingUp = true;
+    panelLedThrobIntensity = minPanelLedThrobIntensity;
+  }
+
+  analogWrite(PLAY_LAST_LED_PIN, panelLedThrobIntensity);
+  analogWrite(PLAY_RANDOM_LED_PIN, panelLedThrobIntensity);
+  analogWrite(RECORD_LED_PIN, panelLedThrobIntensity);
+
+  if (steppingUp) {
+    ++panelLedThrobIntensity;
+  }
+  else {
+    --panelLedThrobIntensity;
+  }
+
+  testAddressableLeds(CHSV(hue++, 255, 255));
 }
 
 
@@ -446,7 +501,7 @@ void setup()
   pinMode(PLAY_RANDOM_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RECORD_BUTTON_PIN, INPUT_PULLUP);
   pinMode(VOLUME_PIN, INPUT);
-  
+
   pinMode(PLAY_LAST_LED_PIN, OUTPUT);
   pinMode(PLAY_RANDOM_LED_PIN, OUTPUT);
   pinMode(RECORD_LED_PIN, OUTPUT);
@@ -464,8 +519,10 @@ void setup()
 #endif
   debugPrint(F("Starting..."));
 
-  FastLED.addLeds<WS2811, ADDRESSABLE_LEDS_DATA_PIN, RGB>(leds, NUM_LEDS);
-      
+  //FastLED.addLeds<WS2811, ADDRESSABLE_LEDS_DATA_PIN, RGB>(leds, NUM_LEDS);
+  FastLED.addLeds<WS2812SERIAL, ADDRESSABLE_LEDS_DATA_PIN, BGR>(leds,NUM_LEDS);
+  //LEDS.setBrightness(32);
+
   // Allocate buffer blocks for recorded audio.
   AudioMemory(numAudioBufferBlocks);
 
@@ -478,7 +535,7 @@ void setup()
 
   updateOutputGain(true);
 
-  testAddressableLeds(CRGB::White);
+  testAddressableLeds(CRGB::White, true);
 
   opState = OperatingState::INIT;
 }
@@ -496,9 +553,6 @@ void loop()
   static char rawAudioFilePath[maxPathLength];
 
   uint32_t now = millis();
-
-///  if ((int32_t) (now - ledNextUpdateMs) >= 0) {
-///    ledNextUpdateMs += ledUpdateIntervalMs; 
 
   buttonRecord.update();
   buttonPlayLast.update();
@@ -523,7 +577,6 @@ void loop()
       break;
 
     case OperatingState::IDLE_START:
-      testAddressableLeds(CRGB::Green);
       startThrobLights();
       opState = OperatingState::IDLE;
       break;
@@ -531,7 +584,6 @@ void loop()
     case OperatingState::IDLE:
       if (buttonRecord.fallingEdge()) {
         stopThrobLights();
-        // TODO:  stop LED throb
         digitalWrite(STATUS_LED_PIN, LOW);
         opState = OperatingState::RECORDING_START;
       }
@@ -551,7 +603,7 @@ void loop()
       break;
 
     case OperatingState::RECORDING_START:
-      testAddressableLeds(CRGB::Red);
+      testAddressableLeds(CRGB::Red, true);
       if (startAudioRecordQueue()) {
         recordingStartMs = now;
         analogWrite(RECORD_LED_PIN, 255);
@@ -575,8 +627,6 @@ void loop()
     case OperatingState::RECORDING_STOP:
       stopAudioRecordQueue();
       analogWrite(RECORD_LED_PIN, 0);
-      // FastLED test
-      leds[0] = CRGB::Black;
       if ((int32_t) (now - recordingStartMs) >= validRecordingMinLengthMs) {
         if (!archiveCurrentRecording()) {
           digitalWrite(STATUS_LED_PIN, HIGH);
@@ -588,7 +638,7 @@ void loop()
       break;
 
     case OperatingState::PLAY_LAST:
-      testAddressableLeds(CRGB::Magenta);
+      testAddressableLeds(CRGB::Green, true);
       if (sd.exists(lastRecordingArchiveFilePath)) {
         strcpy(rawAudioFilePath, lastRecordingArchiveFilePath);
         analogWrite(PLAY_LAST_LED_PIN, 255);
@@ -600,7 +650,7 @@ void loop()
       break;
 
     case OperatingState::PLAY_RANDOM:
-      testAddressableLeds(CRGB::Blue);
+      testAddressableLeds(CRGB::Blue, true);
       if (selectRandomRecordingArchiveFile(rawAudioFilePath)) {
         analogWrite(PLAY_RANDOM_LED_PIN, 255);
       }
