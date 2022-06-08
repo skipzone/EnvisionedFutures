@@ -34,30 +34,31 @@
 
 //#define ENABLE_DEBUG_PRINT
 
+// SD card pins (on the audio board)
 #define SDCARD_CS_PIN    10
 #define SDCARD_MISO_PIN  12
 #define SDCARD_MOSI_PIN  7
 #define SDCARD_SCK_PIN   14
+// TODO:  add a comment listing the other audio board pins so that you don't fuck up the assignments again
 
+// input pins
 #define PLAY_LAST_BUTTON_PIN 0
 #define PLAY_RANDOM_BUTTON_PIN 1
 #define RECORD_BUTTON_PIN 2
+#define LIGHT_SENSOR_PIN 17
+#define VOLUME_PIN A1
 
+// output pins
 #define PLAY_LAST_LED_PIN 3
 #define PLAY_RANDOM_LED_PIN 4
 #define RECORD_LED_PIN 5
-//#define LIGHT_SENSOR_PIN 6  // TODO:  nope!  this is MEMCS on the audio board.  move to pin 17.
 #define ADDRESSABLE_LEDS_DATA_PIN 8
-//#define STATUS_LED_PIN 9  // TODO:  nope!  this is BCLK on the audio board.  move to pin 20.
-#define STATUS_LED_PIN 20
-
+#define STATUS_LED_PIN 20   // was 9, but that conflicts with BCLK for the audio board
 #define AMP_SHDN_PIN 21
-
-#define VOLUME_PIN A1
 
 #define SPI_SPEED SD_SCK_MHZ(50)
 
-#define NUM_LEDS 50
+#define NUM_LEDS 96
 
 static constexpr int32_t validRecordingMinLengthMs = 1000;
 
@@ -77,10 +78,12 @@ static constexpr char genericErrorMessageFileName[] = "somethingWentWrong.u16";
 
 static constexpr uint8_t minPanelLedThrobIntensity = 16;
 static constexpr uint8_t maxPanelLedThrobIntensity = 128;
-
 static constexpr uint32_t ledThrobStepIntervalMs = 10;
 
 static constexpr uint32_t addressableLedsUpdateIntervalMs = 100;
+static constexpr uint8_t addressableLedsIntensity = 128;
+
+static constexpr uint8_t lightSensorSeesDark = HIGH;
 
 
 
@@ -186,7 +189,7 @@ void testAddressableLeds(CRGB rgbColor, bool forceUpdate)
     for (int i = 0; i < NUM_LEDS; ++i) {
       leds[i] = rgbColor;
     }
-    FastLED.show(16);
+    FastLED.show(digitalRead(LIGHT_SENSOR_PIN) == lightSensorSeesDark ? addressableLedsIntensity : 0);
   }
 }
 
@@ -500,6 +503,7 @@ void setup()
   pinMode(PLAY_LAST_BUTTON_PIN, INPUT_PULLUP);
   pinMode(PLAY_RANDOM_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RECORD_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(LIGHT_SENSOR_PIN, INPUT);
   pinMode(VOLUME_PIN, INPUT);
 
   pinMode(PLAY_LAST_LED_PIN, OUTPUT);
@@ -519,8 +523,8 @@ void setup()
 #endif
   debugPrint(F("Starting..."));
 
-  //FastLED.addLeds<WS2811, ADDRESSABLE_LEDS_DATA_PIN, RGB>(leds, NUM_LEDS);
-  FastLED.addLeds<WS2812SERIAL, ADDRESSABLE_LEDS_DATA_PIN, BGR>(leds,NUM_LEDS);
+  //FastLED.addLeds<WS2812SERIAL, ADDRESSABLE_LEDS_DATA_PIN, BRG>(leds, NUM_LEDS);    // 144 px/m strip
+  FastLED.addLeds<WS2812SERIAL, ADDRESSABLE_LEDS_DATA_PIN, BGR>(leds,NUM_LEDS); // 5 mm thru-hole single pixel, Box Project pixel strings
   //LEDS.setBrightness(32);
 
   // Allocate buffer blocks for recorded audio.
