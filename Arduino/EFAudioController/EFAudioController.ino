@@ -170,14 +170,28 @@ static uint32_t ledThrobNextUpdateMs;
 static uint32_t addressableLedsNextUpdateMs;
 
 
+/***********************
+ * Function Prototypes *
+ ***********************/
+
+void updateAddressableLeds(bool forceUpdate = false);
+void setAndUpdateAddressableLeds(CRGB rgbColor, bool forceUpdate = false);
+
+
 
 /***********
  * Helpers *
  ***********/
 
-void testAddressableLeds(CRGB rgbColor, bool forceUpdate = false);
+void setAddressableLedColor(CRGB rgbColor)
+{
+    for (int i = 0; i < NUM_LEDS; ++i) {
+      leds[i] = rgbColor;
+    }
+}
 
-void testAddressableLeds(CRGB rgbColor, bool forceUpdate)
+
+void updateAddressableLeds(bool forceUpdate)
 {
   uint32_t now = millis();
 
@@ -186,11 +200,15 @@ void testAddressableLeds(CRGB rgbColor, bool forceUpdate)
   // TODO:  are the signed/unsigned parts right?
   if ((int32_t) (now - addressableLedsNextUpdateMs) >= 0) {
     addressableLedsNextUpdateMs += addressableLedsUpdateIntervalMs;
-    for (int i = 0; i < NUM_LEDS; ++i) {
-      leds[i] = rgbColor;
-    }
     FastLED.show(digitalRead(LIGHT_SENSOR_PIN) == lightSensorSeesDark ? addressableLedsIntensity : 0);
   }
+}
+
+
+void setAndUpdateAddressableLeds(CRGB rgbColor, bool forceUpdate = false)
+{
+  setAddressableLedColor(rgbColor);
+  updateAddressableLeds(forceUpdate);
 }
 
 
@@ -459,7 +477,13 @@ void stopThrobLights()
 void doThrobLights()
 {
   static bool steppingUp;
-  static uint8_t hue;
+  static uint8_t startingHue;
+
+#if (NUM_LEDS > 255)
+  static constexpr uint8_t hueStep = 1;
+#else
+  static constexpr uint8_t hueStep = 256 / NUM_LEDS;
+#endif
 
   uint32_t now = millis();
 
@@ -489,7 +513,13 @@ void doThrobLights()
     --panelLedThrobIntensity;
   }
 
-  testAddressableLeds(CHSV(hue++, 255, 255));
+  uint8_t hue = startingHue++;
+  for (int i = 0; i < NUM_LEDS; ++i) {
+    leds[i] = CHSV(hue, 255, 255);
+    hue += hueStep;
+  }
+
+  updateAddressableLeds();
 }
 
 
@@ -539,7 +569,7 @@ void setup()
 
   updateOutputGain(true);
 
-  testAddressableLeds(CRGB::White, true);
+  setAndUpdateAddressableLeds(CRGB::White, true);
 
   opState = OperatingState::INIT;
 }
@@ -607,7 +637,7 @@ void loop()
       break;
 
     case OperatingState::RECORDING_START:
-      testAddressableLeds(CRGB::Red, true);
+      setAndUpdateAddressableLeds(CRGB::Red, true);
       if (startAudioRecordQueue()) {
         recordingStartMs = now;
         analogWrite(RECORD_LED_PIN, 255);
@@ -642,7 +672,7 @@ void loop()
       break;
 
     case OperatingState::PLAY_LAST:
-      testAddressableLeds(CRGB::Green, true);
+      setAndUpdateAddressableLeds(CRGB::Blue, true);
       if (sd.exists(lastRecordingArchiveFilePath)) {
         strcpy(rawAudioFilePath, lastRecordingArchiveFilePath);
         analogWrite(PLAY_LAST_LED_PIN, 255);
@@ -654,7 +684,7 @@ void loop()
       break;
 
     case OperatingState::PLAY_RANDOM:
-      testAddressableLeds(CRGB::Blue, true);
+      setAndUpdateAddressableLeds(CRGB::Green, true);
       if (selectRandomRecordingArchiveFile(rawAudioFilePath)) {
         analogWrite(PLAY_RANDOM_LED_PIN, 255);
       }
